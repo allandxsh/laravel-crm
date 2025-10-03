@@ -1,40 +1,30 @@
 # --- Estágio 1: Dependências do PHP ---
-# Usa a imagem oficial do Composer para instalar dependências
 FROM composer:2 as vendor
 
 WORKDIR /app
-# Copia somente os arquivos necessários para o composer
 COPY database/ database/
 COPY composer.json composer.json
 COPY composer.lock composer.lock
-# Instala somente dependências de produção de forma otimizada
-RUN composer install \
-    --ignore-platform-reqs \
-    --no-interaction \
-    --no-plugins \
-    --no-scripts \
-    --prefer-dist \
-    --no-dev \
-    --optimize-autoloader
+RUN composer install --no-dev --no-scripts --prefer-dist --optimize-autoloader
 
 
-# --- Estágio 2: Assets com Node.js (CSS/JS) ---
-# Usa uma imagem do Node para compilar os assets
+# --- Estágio 2: Assets com Node.js (usando Vite) ---
 FROM node:18 as node_assets
 
 WORKDIR /app
 COPY package.json package.json
-COPY webpack.mix.js webpack.mix.js
-COPY resources/ resources/
+# Correção: Procura pelo vite.config.js
+COPY vite.config.js vite.config.js
+# Correção: Copia a pasta public que contém os assets iniciais
+COPY public/ public/
 RUN npm install
-RUN npm run production
+RUN npm run build
 
 
 # --- Estágio 3: Imagem Final de Produção ---
-# Usa uma imagem leve do PHP-FPM com Alpine Linux
 FROM php:8.2-fpm-alpine
 
-# Instala dependências do sistema e extensões do PHP necessárias para o Krayin/Laravel
+# Instala dependências do sistema e extensões do PHP
 RUN apk add --no-cache \
         libpng-dev \
         libzip-dev \
@@ -48,19 +38,20 @@ RUN apk add --no-cache \
 # Copia os arquivos da aplicação e dos estágios anteriores
 WORKDIR /app
 COPY --from=vendor /app/vendor/ vendor/
+# Correção: Copia os assets compilados pelo Vite
 COPY --from=node_assets /app/public/ public/
 COPY . .
 
-# Copia os arquivos de configuração para Nginx e Supervisor
+# Copia as configurações do Nginx e Supervisor
 COPY .docker/nginx.conf /etc/nginx/nginx.conf
 COPY .docker/supervisord.conf /etc/supervisord.conf
 
-# Ajusta as permissões das pastas que o Laravel precisa escrever
+# Ajusta permissões
 RUN chown -R www-data:www-data /app \
     && chmod -R 775 /app/storage /app/bootstrap/cache
 
-# Expor a porta 80, que o Nginx usará
+# Expor porta
 EXPOSE 80
 
-# Comando para iniciar o Supervisor, que vai gerenciar o Nginx e o PHP-FPM
+# Comando para iniciar o Supervisor
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
