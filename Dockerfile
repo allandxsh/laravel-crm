@@ -1,11 +1,25 @@
 # --- Estágio 1: Dependências do PHP ---
-FROM composer:2 as vendor
+# Modificação: Usamos uma imagem base do PHP para poder instalar extensões
+FROM php:8.2-cli-alpine as vendor
+
+# Instala o Composer e as extensões necessárias para o 'composer install'
+RUN apk add --no-cache libzip-dev gd-dev libpng-dev libjpeg-turbo-dev freetype-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j$(nproc) gd pdo pdo_mysql zip calendar \
+    && curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
 WORKDIR /app
 COPY database/ database/
 COPY composer.json composer.json
 COPY composer.lock composer.lock
-RUN composer install --no-dev --no-scripts --prefer-dist --optimize-autoloader
+# Agora o composer install funcionará, pois as extensões existem
+RUN composer install \
+    --no-interaction \
+    --no-plugins \
+    --no-scripts \
+    --prefer-dist \
+    --no-dev \
+    --optimize-autoloader
 
 
 # --- Estágio 2: Assets com Node.js (usando Vite) ---
@@ -13,9 +27,7 @@ FROM node:18 as node_assets
 
 WORKDIR /app
 COPY package.json package.json
-# Correção: Procura pelo vite.config.js
 COPY vite.config.js vite.config.js
-# Correção: Copia a pasta public que contém os assets iniciais
 COPY public/ public/
 RUN npm install
 RUN npm run build
@@ -24,7 +36,7 @@ RUN npm run build
 # --- Estágio 3: Imagem Final de Produção ---
 FROM php:8.2-fpm-alpine
 
-# Instala dependências do sistema e extensões do PHP
+# Instala as mesmas dependências e extensões da imagem final
 RUN apk add --no-cache \
         libpng-dev \
         libzip-dev \
@@ -38,7 +50,6 @@ RUN apk add --no-cache \
 # Copia os arquivos da aplicação e dos estágios anteriores
 WORKDIR /app
 COPY --from=vendor /app/vendor/ vendor/
-# Correção: Copia os assets compilados pelo Vite
 COPY --from=node_assets /app/public/ public/
 COPY . .
 
