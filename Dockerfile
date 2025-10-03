@@ -33,7 +33,7 @@ RUN apk add --no-cache \
         nginx \
         supervisor \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) gd pdo pdo_mysql zip
+    && docker-php-ext-install -j$(nproc) gd pdo pdo_mysql zip calendar
 
 # Copia os arquivos da aplicação e dos estágios anteriores
 WORKDIR /app
